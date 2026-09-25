@@ -20,7 +20,8 @@ pool, cost/unlimited status, workspaces, media library, assets, job management.
 ## Requirements
 
 - Python 3.10+
-- Claude Code (CLI, or the VS Code / JetBrains extension) — or any MCP client
+- An MCP client: Claude Code (CLI, or the VS Code / JetBrains extension),
+  OpenCode, Claude Desktop, or any other MCP client
 - An active Higgsfield login in your browser
 
 ## 1. Install
@@ -41,6 +42,27 @@ Or from a local clone (what you have now):
 ```bash
 pip install -e .
 ```
+
+**Check it:**
+
+```bash
+higgsfield-unlimited-mcp --help
+```
+
+You should see usage text with `--transport`, `--host`, `--port`. ✅ If the
+command isn't found (e.g. you installed into a project venv), run it as
+`<repo>/.venv/bin/higgsfield-unlimited-mcp --help`.
+
+> 📌 **Write down the full path to the command** — you'll paste it into your MCP
+> client config in step 4:
+>
+> ```bash
+> which higgsfield-unlimited-mcp
+> # → e.g. /Users/you/higgsfield-unlimited-mcp/.venv/bin/higgsfield-unlimited-mcp
+> ```
+>
+> If you installed from a clone, keep the project folder where it is — it's an
+> *editable* install; moving or renaming it breaks the server.
 
 ## 2. Get your credentials (~2 min)
 
@@ -72,21 +94,90 @@ HIGGSFIELD_DEFAULT_RESOLUTION=2k
 
 `.env` is gitignored — your credentials never leave your machine.
 
-## 3. Connect it to Claude Code (VS Code)
+## 3. Prove it works (before touching any client)
 
-The server reads credentials from your `.env` via `HIGGSFIELD_DOTENV` (an absolute path),
-so no secrets go into the MCP config file.
+```bash
+higgsfield-unlimited-verify --skip-generate    # auth + endpoints only, no credits
+```
 
-**Project-scoped** — create `.mcp.json` in the project root:
+**Success looks like:**
+
+```
+[PASS] Configuration present (cookie + session id set).
+[PASS] Clerk JWT minted (990 chars).
+[PASS] Generation history endpoint OK (dict).
+[PASS] Account endpoint OK via /user.
+[WARN] Skipping test generation (--skip-generate).
+
+========================================
+All checks passed.
+```
+
+✅ If any line shows `[FAIL]`, stop — see [Troubleshooting](#troubleshooting).
+When you reach `All checks passed.` you're ready for step 4.
+
+## 4. Connect it to your client
+
+The server runs over **stdio** (the default) — no flags needed. Every config
+below does the same two things: launch the `higgsfield-unlimited-mcp` command,
+and point it at your `.env` via `HIGGSFIELD_DOTENV` (an **absolute path**), so
+no secrets go into the MCP config file itself.
+
+**Before you start:** replace the `/ABSOLUTE/PATH` placeholders with your real
+paths:
+
+```bash
+which higgsfield-unlimited-mcp    # → the command to launch
+pwd                               # → the folder holding your .env (step 2)
+```
+
+### 🅰️ OpenCode
+
+Edit `opencode.json` in your project root (or the global
+`~/.config/opencode/opencode.json`):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "higgsfield-unlimited": {
+      "type": "local",
+      "command": ["/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.venv/bin/higgsfield-unlimited-mcp"],
+      "environment": {
+        "HIGGSFIELD_DOTENV": "/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.env"
+      },
+      "enabled": true
+    }
+  }
+}
+```
+
+Restart OpenCode (new session), then prompt:
+
+> with the higgsfield server, run `auth_status`
+
+Tools appear with the server name as prefix: `higgsfield-unlimited_auth_status`,
+`higgsfield-unlimited_generate_image`, …
+
+### 🅱️ Claude Code (CLI / VS Code / JetBrains)
+
+**One-liner** (user scope — works in every project):
+
+```bash
+claude mcp add higgsfield-unlimited -s user \
+  --env HIGGSFIELD_DOTENV=/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.env \
+  -- /ABSOLUTE/PATH/higgsfield-unlimited-mcp/.venv/bin/higgsfield-unlimited-mcp
+```
+
+**Or project-scoped** — create `.mcp.json` in the project root:
 
 ```json
 {
   "mcpServers": {
     "higgsfield-unlimited": {
-      "command": "python",
-      "args": ["-m", "higgsfield_unlimited_mcp"],
+      "command": "/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.venv/bin/higgsfield-unlimited-mcp",
       "env": {
-        "HIGGSFIELD_DOTENV": "C:\\Users\\TESST\\Desktop\\higgsfield-unlimited-mcp\\.env"
+        "HIGGSFIELD_DOTENV": "/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.env"
       }
     }
   }
@@ -96,23 +187,54 @@ so no secrets go into the MCP config file.
 **Or user-scoped** (works in every project) — add the same `mcpServers` block to
 `~/.claude.json`.
 
-**Or via the CLI:**
+First time on a project, Claude Code asks you to approve the `.mcp.json` — accept.
 
-```bash
-claude mcp add higgsfield-unlimited -s user -- python -m higgsfield_unlimited_mcp
+**Check it:** `claude mcp list`, or type `/mcp` inside a session →
+`higgsfield-unlimited` should show **✓ connected** with **35 tools**.
+
+### ☁️ Claude Desktop (the app)
+
+Edit `~/Library/Application Support/Claude/claude_desktop_config.json`
+(macOS — create the file if it doesn't exist; Windows:
+`%APPDATA%\Claude\claude_desktop_config.json`; Linux:
+`~/.config/Claude/claude_desktop_config.json`):
+
+```json
+{
+  "mcpServers": {
+    "higgsfield-unlimited": {
+      "command": "/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.venv/bin/higgsfield-unlimited-mcp",
+      "env": {
+        "HIGGSFIELD_DOTENV": "/ABSOLUTE/PATH/higgsfield-unlimited-mcp/.env"
+      }
+    }
+  }
+}
 ```
 
-Then reload the window / restart Claude Code. Verify the tools are live by asking:
+Fully quit Claude Desktop (⌘Q — not just closing the window) and reopen; the
+tools appear under the tools (🔌) icon.
+
+> 💡 **Why absolute paths?** GUI apps like Claude Desktop start with a
+> near-empty `PATH`, so a bare `higgsfield-unlimited-mcp` command often works in
+> your terminal but not in the app. Absolute path = never breaks.
+
+Either way, verify the tools are live by asking:
 
 > Use higgsfield-unlimited to run `auth_status`, then `unlimited_status`.
 
-## 4. Verify (optional, CLI)
+## 5. Try it out
 
-```bash
-higgsfield-unlimited-verify --skip-generate    # auth + endpoints only, no credits
-```
+First run, ask the agent to **check before spending**:
 
-## 5. Serve as a remote HTTP endpoint (optional)
+> First: run `auth_status` and `unlimited_status`. If `nano-banana-2` is
+> unlimited for this account, generate a 9:16 image: "messy salon appointment
+> notebook, warm evening light, cinematic".
+
+More prompts (video, batch, Turkish voiceover…) →
+[Usage examples](#usage-examples-ask-claude-in-plain-language) below.
+
+## 6. Serve as a remote HTTP endpoint (optional)
 
 Desktop clients use the default **stdio** transport (nothing to configure). To
 expose the server as a network MCP endpoint instead — Streamable HTTP at
@@ -137,6 +259,20 @@ The env vars can live in your `.env`; command-line flags always win.
 > call the tools and spend your Higgsfield credits. Keep the default
 > `127.0.0.1` bind unless you firewall it or put it behind an authenticating
 > reverse proxy — only use `0.0.0.0` on a trusted network.
+
+---
+
+## Troubleshooting
+
+| Symptom | Fix |
+|---|---|
+| Client shows the server but "failed to connect" | Run the console script manually in a terminal and read the traceback. Check the `command` path in your config is the **absolute** path from `which higgsfield-unlimited-mcp`. |
+| `[FAIL] Could not mint JWT` (step 3) | Your `__client` cookie or session id is wrong/expired — redo step 2. |
+| `403 datadome` / captcha errors on generate | Your `datadome` cookie **rotated** — grab a fresh one from `document.cookie`, update `.env`. |
+| `403 unlimited_generation_not_allowed` | Your plan isn't unlimited-eligible for that model right now (promo/plan dependent). Ask the agent to run `unlimited_status` to see which models are free for you. **Not a wiring bug** — auth checks pass. |
+| `422 ... input_images Field required` | You're on an old install — redo step 1 (`pip install -e .` / `pip install git+...`); current code sends `input_images: []` automatically. |
+| `.env` not picked up by the client | `HIGGSFIELD_DOTENV` must be the **absolute** path ending in `/.env` (clients don't run from the repo folder). |
+| Model `nano-banana-pro` errors `405`/`400` | Retired server-side — use `nano-banana-2` instead. |
 
 ---
 
