@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import sys
 from pathlib import Path
 
@@ -70,7 +71,7 @@ async def _run(skip_generate: bool, keep_output: bool) -> int:
             _warn(f"Generation history endpoint did not respond: {exc}")
 
         try:
-            acct = await svc.try_get(["/account", "/account/info", "/me"])
+            acct = await svc.try_get(["/user", "/account", "/account/info", "/me"])
             _ok(f"Account endpoint OK via {acct['_endpoint']}.")
         except Exception as exc:  # noqa: BLE001
             _warn(f"Account endpoint not reachable (paths may differ): {exc}")
@@ -113,6 +114,19 @@ async def _run(skip_generate: bool, keep_output: bool) -> int:
                     exit_code = 1
             except Exception as exc:  # noqa: BLE001
                 _fail(f"Test generation failed: {exc}")
+                body = getattr(exc, "body", None)
+                if body is not None:
+                    print(
+                        "       body: "
+                        + json.dumps(body, ensure_ascii=False)[:800]
+                    )
+                if getattr(exc, "status", None) == 403 and "unlimited_generation_not_allowed" in json.dumps(body):
+                    print(
+                        "       The account is not unlimited-eligible for this model "
+                        "right now (plan/promo dependent). Run the `unlimited_status` "
+                        "tool to check per-model entitlement. This is not an MCP "
+                        "wiring problem — auth and endpoints above passed."
+                    )
                 exit_code = 1
 
         print("\n" + "=" * 40)

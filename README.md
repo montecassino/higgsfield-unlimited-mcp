@@ -11,7 +11,7 @@ preview and job management.
 > before generating — if a model isn't unlimited-active for you it costs credits
 > (`estimate_cost`).
 
-**Covered (34 tools):** image (v1 + v2 models), video (text-to-video & image-to-video,
+**Covered (35 tools):** image (v1 + v2 models), video (text-to-video & image-to-video,
 9:16, resolution fallback), audio (TTS + voice list), local-file upload, multi-account
 pool, cost/unlimited status, workspaces, media library, assets, job management.
 
@@ -27,6 +27,13 @@ pool, cost/unlimited status, workspaces, media library, assets, job management.
 
 ```bash
 pip install git+https://github.com/nukIeer/higgsfield-unlimited-mcp.git
+```
+
+Or in one command with `uv` (installs the `higgsfield-unlimited-mcp` and
+`higgsfield-unlimited-verify` console scripts in an isolated tool env):
+
+```bash
+uv tool install git+https://github.com/nukIeer/higgsfield-unlimited-mcp.git
 ```
 
 Or from a local clone (what you have now):
@@ -104,6 +111,32 @@ Then reload the window / restart Claude Code. Verify the tools are live by askin
 ```bash
 higgsfield-unlimited-verify --skip-generate    # auth + endpoints only, no credits
 ```
+
+## 5. Serve as a remote HTTP endpoint (optional)
+
+Desktop clients use the default **stdio** transport (nothing to configure). To
+expose the server as a network MCP endpoint instead — Streamable HTTP at
+`/mcp` — run:
+
+```bash
+higgsfield-unlimited-mcp --transport streamable-http --host 0.0.0.0 --port 8000
+# → serving streamable-http on http://0.0.0.0:8000/mcp
+```
+
+Connect any remote-MCP-capable client to `http://<host>:8000/mcp`.
+
+| Flag | Env var | Default | Meaning |
+|------|---------|---------|---------|
+| `--transport` | `MCP_TRANSPORT` | `stdio` | `stdio` · `sse` · `streamable-http` |
+| `--host` | `MCP_HTTP_HOST` | `127.0.0.1` | Bind address; `0.0.0.0` accepts network connections |
+| `--port` | `MCP_HTTP_PORT` | `8000` | Port for the HTTP transports |
+
+The env vars can live in your `.env`; command-line flags always win.
+
+> ⚠️ **The HTTP endpoint has no authentication.** Anyone who can reach it can
+> call the tools and spend your Higgsfield credits. Keep the default
+> `127.0.0.1` bind unless you firewall it or put it behind an authenticating
+> reverse proxy — only use `0.0.0.0` on a trusted network.
 
 ---
 

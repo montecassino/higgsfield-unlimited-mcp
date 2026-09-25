@@ -10,15 +10,17 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import sys
 from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from .client import HiggsfieldError
-from .config import get_config
 from . import dimensions as dims
 from . import models as model_registry
+from .client import HiggsfieldError
+from .config import get_config
 from .pool import get_pool
 from .service import Service
 
@@ -151,14 +153,14 @@ async def unlimited_status(account: str | int | None = None) -> str:
         out: dict[str, Any] = {"activations": activations.get("data")}
         try:
             out["bundle_status"] = (await svc.try_get(["/subscriptions/bundle/all-unlim/status"]))["data"]
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110 — optional endpoint; absence is not an error
             pass
         try:
             user = (await svc.try_get(["/user"]))["data"]
             out["has_unlim"] = user.get("has_unlim")
             out["has_flex_unlim"] = user.get("has_flex_unlim")
             out["plan_type"] = user.get("plan_type")
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001,S110 — optional endpoint; absence is not an error
             pass
         return _jdump(out)
     except Exception as exc:  # noqa: BLE001
@@ -239,11 +241,13 @@ async def _build_image_params(
     if negative_prompt:
         params["negative_prompt"] = negative_prompt
     media = await svc.resolve_inputs(input_files, input_images)
-    if media:
-        if api_version == "v2":
+    if api_version == "v2":
+        if media:
             params["medias"] = svc.to_v2_medias(media, role="image")
-        else:
-            params["input_images"] = media
+    else:
+        # nano-banana-2 now rejects payloads without the input_images key (422),
+        # even for prompt-only generations; an empty list passes (verified live).
+        params["input_images"] = media or []
     if extra_params:
         params.update(extra_params)
     return params
@@ -359,8 +363,10 @@ async def generate_storyboard(
     """Multi-shot storyboard with character/style continuity.
 
     Uses Higgsfield's dedicated multi-shot endpoint (nano-banana-2-shots). Each
-    entry in ``shots`` is one shot's prompt; an optional reference image is shared
-    across every shot for continuity.
+    entry in ``shots`` is one shot's prompt; a reference image is shared across
+    every shot for continuity. The current schema requires at least one
+    reference (``reference_files`` / ``reference_images``) — without it the API
+    answers ``422 input_images: List should have at least 1 item``.
     """
     cfg = get_config()
     resolution = resolution or cfg.default_resolution
@@ -917,13 +923,57 @@ async def unlike_asset(asset_id: str) -> str:
         return _err(exc)
 
 
-def run() -> None:
-    cfg = get_config()
+def run(
+    *,
+    transport: str | None = None,
+    host: str | None = None,
+    port: int | None = None,
+) -> None:
+    """Run the MCP server.
+
+    ``transport`` / ``host`` / ``port`` come from the CLI (see ``__main__``);
+    anything left as ``None`` falls back to the ``MCP_TRANSPORT`` /
+    ``MCP_HTTP_HOST`` / ``MCP_HTTP_PORT`` environment variables (which may be
+    defined in ``.env``), then to stdio / the SDK defaults.
+    """
+    cfg = get_config()  # loads .env — after argparse, so --help never needs credentials
     logging.basicConfig(
         level=getattr(logging, cfg.log_level.upper(), logging.INFO),
         format="%(asctime)s %(name)s %(levelname)s %(message)s",
     )
-    mcp.run()
+
+    if transport is None:
+        transport = (os.environ.get("MCP_TRANSPORT") or "stdio").strip().lower()
+    if transport not in ("stdio", "sse", "streamable-http"):
+        raise SystemExit(
+            f"Invalid transport {transport!r} (expected: stdio, sse, streamable-http)"
+        )
+    if host is None:
+        host = (os.environ.get("MCP_HTTP_HOST") or "").strip() or None
+    if port is None:
+        raw_port = (os.environ.get("MCP_HTTP_PORT") or "").strip()
+        if raw_port:
+            try:
+                port = int(raw_port)
+            except ValueError:
+                raise SystemExit(f"Invalid MCP_HTTP_PORT {raw_port!r}") from None
+    if host:
+        mcp.settings.host = host
+    if port:
+        mcp.settings.port = port
+
+    if transport != "stdio":
+        path = (
+            mcp.settings.streamable_http_path
+            if transport == "streamable-http"
+            else mcp.settings.sse_path
+        )
+        print(
+            f"higgsfield-unlimited-mcp: serving {transport} on "
+            f"http://{mcp.settings.host}:{mcp.settings.port}{path}",
+            file=sys.stderr,
+        )
+    mcp.run(transport=transport)
 
 
 if __name__ == "__main__":

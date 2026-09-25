@@ -24,6 +24,14 @@ A bare URL string (no `id`) is rejected with `422 input_images.0.id Field requir
 So an input image must first be uploaded (via `media_upload` / `input_files`) to obtain
 an `id`. The server ignores the `width`/`height` you send and recomputes them.
 
+> **Schema drift (verified 2026-09-25):** `nano-banana-2` now *requires* the
+> `input_images` key even for prompt-only generations — send `"input_images": []`
+> when you have no inputs (the MCP does this automatically). With the key absent
+> the API answers `422 body.params.input_images Field required`.
+> `nano-banana-2-shots` requires at least **one** entry (empty list →
+> `422 List should have at least 1 item`). `nano-banana-pro` appears retired:
+> `405 Method Not Allowed` on the v1 path, `400 Unsupported job set type` on v2.
+
 **The create response nests the pollable job id** — the top-level `id` is the
 *project* id, not pollable:
 
@@ -139,7 +147,8 @@ with them filled in.
 
 | Model | Category | Extra fields commonly required |
 |-------|----------|-------------------------------|
-| `nano-banana-2-shots` | image | `shots` (list of `{prompt}`) |
+| `nano-banana-2-shots` | image | `shots` (list of `{prompt}`); `input_images` with **≥1** media entry |
+| `nano-banana-2` | image | `input_images` (key required; empty list OK for prompt-only) |
 | `veo3`, `veo3-1` | video | `duration` (e.g. 4 / 6 / 8) |
 | `infinite-talk`, `lipsync` | video | `audio_url`, an input image |
 | `text2speech` | audio | `text`, optionally `voice` |
